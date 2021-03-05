@@ -2,15 +2,6 @@
 Generate dynamic Reprap automesh grid based on the size of the model. PyQT5 application to add as post-processing script in slicers.
 
 
-Prerequisites
-
-- python3
-- pip3
-- numpy==1.20.1
-- pandas==1.2.3
-- matplotlib==3.3.4
-- PyQt5==5.15.3
-
 Installation
 I recommend to install everthing into a virtualenv!
 
@@ -44,7 +35,7 @@ Required Slicer settings
     /path to the script/automesh.sh;
     
 
-<img width="799" alt="main" src="https://user-images.githubusercontent.com/17797632/110089802-d4947e80-7d96-11eb-841b-bbce6a4493a0.png">
+<img width="799" alt="main" src="https://user-images.githubusercontent.com/17797632/109992089-37d8cf00-7d0b-11eb-9f83-b407c8686bc9.png">
 
-<img width="796" alt="result" src="https://user-images.githubusercontent.com/17797632/110089807-d6f6d880-7d96-11eb-8cea-ad1fec1094dc.png">
+<img width="796" alt="result" src="https://user-images.githubusercontent.com/17797632/109953129-eebf5580-7cdf-11eb-8526-6fc16e1ae39f.png">
 
