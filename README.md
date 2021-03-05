@@ -39,3 +39,5 @@ Required Slicer settings
 
 <img width="796" alt="result" src="https://user-images.githubusercontent.com/17797632/109953129-eebf5580-7cdf-11eb-8526-6fc16e1ae39f.png">
 
+<img width="794" alt="settings" src="https://user-images.githubusercontent.com/17797632/110148259-e6991000-7ddc-11eb-828f-1809de77ffa6.png">
+
