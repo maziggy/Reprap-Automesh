@@ -12,7 +12,7 @@ import numpy as np
 from enum import Enum
 import matplotlib.pyplot as plt
 from form_ui import Ui_MainWindow
-from PyQt5.QtCore import QThread
+from PyQt5.QtCore import QThread, QSettings
 from PyQt5 import QtWidgets, QtCore
 from pyqtspinner.spinner import WaitingSpinner
 from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout
@@ -36,14 +36,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         self.thread = QtCore.QThread()
         self.proc = WaitingSpinner(self, roundness=70.0, opacity=25.0, fade=50.0, radius=20.0, lines=30, line_length=50.0, line_width=5.0, speed=1.0, color=(24, 30, 255))
-        self.proc.moveToThread(self.thread)
+        #self.proc.moveToThread(self.thread)
         self.proc.start()
 
         self.filename = filename
 
         self.pushButtonExitLeft.clicked.connect(self.exit)
         self.pushButtonStart.clicked.connect(self.generateMesh)
-
+        self.checkBoxAutoExit.clicked.connect(self.setAutoExit)
         self.xSpinBox.valueChanged.connect(self.changeX)
         self.ySpinBox.valueChanged.connect(self.changeY)
 
@@ -52,6 +52,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.tabWidget.setTabText(0, 'Meshgrid')
         self.tabWidget.setTabText(1, 'Help')
         self.tabWidget.setTabText(2, 'About')
+
+        self.getSettings()
+
+        if self.settings.value('autoExit') == 1:
+            self.pushButtonExit.hide()
 
         try:
             self.file = open(self.filename, encoding='utf-8')
@@ -86,6 +91,25 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.tnData = base64.b64decode(self.tnData.replace('; ', '')[:lenx])
 
         self.plot()
+
+    def getSettings(self):
+        self.settings = QSettings('maziggy', 'automesh')
+
+        if self.settings.value('autoExit'):
+            self.autoExit = self.settings.value('autoExit')
+            self.checkBoxAutoExit.setChecked(True)
+            self.autoExit = 1
+        else:
+            self.checkBoxAutoExit.setChecked(False)
+            self.autoExit = 0
+
+    def setAutoExit(self):
+        if self.checkBoxAutoExit.checkState() == 2:
+            self.autoExit = 1
+            self.settings.setValue('autoExit', 1)
+        else:
+            self.autoExit = 0
+            self.settings.setValue('autoExit', 0)
 
     def plot(self):
         self.bounds = self.findBounds()
@@ -139,7 +163,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def generateMesh(self):
         self.pushButtonStart.hide()
-        self.pushButtonExitLeft.hide()
 
         self.labelImage.hide()
 
@@ -148,6 +171,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.textBrowserResult.verticalScrollBar().show()
         self.textBrowserResult.verticalScrollBar().setValue(self.textBrowserResult.verticalScrollBar().maximum())
         self.error = 0
+
+        if self.settings.value('autoExit') == 1:
+            self.pushButtonExit.hide()
+        else:
+            self.pushButtonExit.show()
+            self.pushButtonExit.setEnabled(True)
+            self.pushButtonExit.clicked.connect(self.exit)
 
         self.linesNew = self.calcBed()
 
@@ -167,9 +197,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         else:
             self.textBrowserResult.setStyleSheet('color: rgb(0, 0, 0);')
 
-        self.pushButtonExit.setEnabled(True)
-        self.pushButtonExit.show()
-        self.pushButtonExit.clicked.connect(self.exit)
+        if self.settings.value('autoExit') == 1:
+            self.timer = QtCore.QTimer(self)
+            self.timer.timeout.connect(self.exit)
+            self.timer.start(2000)
 
     def calcBed(self):
         self.bed = self.findBed()
@@ -185,14 +216,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             for limit in self.bounds[axis]:
                 if limit == 'min':
                     if self.bed[axis] - self.bounds[axis][limit] > 0:
-                        self.textBrowserResult.append(f'Success: {axis} {limit} coordinate is on the bed.')
+                        self.textBrowserResult.append(f"Success: {axis} {limit} {self.bounds[axis]['min']} coordinate is on the bed.")
                     else:
                         self.error = 1
                         self.textBrowserResult.setText(f'Error: {axis} {limit} coordinate is off the bed. Exiting meshgrid.py.')
                         self.textBrowserResult.show()
                 if limit == 'max':
                     if (self.bed[axis]) - self.bounds[axis][limit] > 0:
-                        self.textBrowserResult.append(f'Success: {axis} {limit} coordinate is on the bed.')
+                        self.textBrowserResult.append(f"Success: {axis} {limit} {self.bounds[axis]['max']} coordinate is on the bed.")
                     else:
                         self.error = 1
                         self.textBrowserResult.append(f'Error: {axis} {limit} coordinate is off the bed. Exiting meshgrid.py.')
@@ -255,6 +286,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     continue
                 elif line.startswith('M557'):
                     self.linesNew.append(re.sub(r'^M557 X\d+:\d+ Y\d+:\d+ P\d+:\d+', self.gridNew, line, flags=re.MULTILINE))
+                    self.textBrowserResult.append('\n\nNew meshgrid line inserted.\n\n' + re.sub(r'^M557 X\d+:\d+ Y\d+:\d+ P\d+:\d+', self.gridNew, line, flags=re.MULTILINE))
                     continue
                 else:
                     self.linesNew.append(line)
@@ -268,11 +300,6 @@ class LayerError(Exception):
     pass
 
 class GcodeType(Enum):
-    FDM_REGULAR = 1
-    FDM_STRATASYS = 2
-    LPBF_REGULAR = 3
-    LPBF_SCODE = 4
-
     @classmethod
     def has_value(cls, value):
         return any(value == item.value for item in cls)
@@ -469,24 +496,22 @@ class GcodeReader(QThread):
             ypoints.append(self.ypos)
             self.ypos = int(self.ypos + self.ys)
 
-        foox = []
         for xp in xpoints:
             for yp in ypoints:
-                foox.append([xp, yp])
                 self.xline = self.ax.plot(xp, yp, marker='.', linestyle='', color='r', markersize='15', gid='xline' )
 
-
-        fooy = []
         for yp in ypoints:
             for xp in xpoints:
-                fooy.append([yp, xp])
                 self.yline = self.ax.plot(xp, yp, marker='.', linestyle='', color='r', markersize='15', gid='yline')
 
         self.ax.axis('auto')
+
         self.ax.set_xticks(xpoints)
         self.ax.set_yticks(ypoints)
 
         plt.rcParams.update({'font.size': 10})
+
+        plt.grid(b=True, which='both', color='r', linestyle='dotted', linewidth=1)
 
         for tick in self.ax.xaxis.get_major_ticks():
             tick.label.set_fontsize(10)
@@ -497,9 +522,6 @@ class GcodeReader(QThread):
         self.ax.set_title("Object size " + str(self.xlen) + " x " + str(self.ylen))
 
         self.done.emit(self.fig, self.ax, xpoints, ypoints)
-
-        #return self.fig, self.ax, xpoints, ypoints
-
 
     def update(self, xspace, yspace):
         self.xspace = xspace
@@ -527,17 +549,12 @@ class GcodeReader(QThread):
             ypoints.append(ypos)
             ypos = int(ypos + ys)
 
-        foox = []
         for xp in xpoints:
             for yp in ypoints:
-                foox.append([xp, yp])
                 self.ax.plot(xp, yp, marker='.', linestyle='', color='r', markersize='15')
 
-
-        fooy = []
         for yp in ypoints:
             for xp in xpoints:
-                fooy.append([yp, xp])
                 self.ax.plot(xp, yp, marker='.', linestyle='', color='r', markersize='15')
 
         self.ax.axis('auto')
