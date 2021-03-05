@@ -7,6 +7,7 @@ import sys
 import math
 import os.path
 import base64
+import requests
 import collections
 import numpy as np
 from enum import Enum
@@ -39,19 +40,24 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         #self.proc.moveToThread(self.thread)
         self.proc.start()
 
+        self.error = 0
+
         self.filename = filename
 
-        self.pushButtonExitLeft.clicked.connect(self.exit)
+        self.pushButtonExitLeft.clicked.connect(self.bye)
         self.pushButtonStart.clicked.connect(self.generateMesh)
-        self.checkBoxAutoExit.clicked.connect(self.setAutoExit)
+        self.autoExitCheckBox.clicked.connect(self.setAutoExit)
+        self.autoUploadCheckBox.clicked.connect(self.setAutoUpload)
+        self.printerURLLineEdit.textChanged.connect(self.setAutoUpload)
         self.xSpinBox.valueChanged.connect(self.changeX)
         self.ySpinBox.valueChanged.connect(self.changeY)
 
         self.labelFilename.setText(os.path.basename(self.filename))
 
         self.tabWidget.setTabText(0, 'Meshgrid')
-        self.tabWidget.setTabText(1, 'Help')
-        self.tabWidget.setTabText(2, 'About')
+        self.tabWidget.setTabText(1, 'Settings')
+        self.tabWidget.setTabText(2, 'Help')
+        self.tabWidget.setTabText(3, 'About')
 
         self.getSettings()
 
@@ -95,21 +101,61 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def getSettings(self):
         self.settings = QSettings('maziggy', 'automesh')
 
-        if self.settings.value('autoExit'):
+        if self.settings.value('autoExit') == 1:
             self.autoExit = self.settings.value('autoExit')
-            self.checkBoxAutoExit.setChecked(True)
-            self.autoExit = 1
+            self.autoExitCheckBox.setChecked(True)
         else:
-            self.checkBoxAutoExit.setChecked(False)
+            self.autoExitCheckBox.setChecked(False)
             self.autoExit = 0
 
+        if self.settings.value('autoUpload') == 1:
+            self.autoUploadCheckBox.setChecked(True)
+            self.printerURLLineEdit.setEnabled(True)
+            self.autoUpload = 1
+        else:
+            self.autoUploadCheckBox.setChecked(False)
+            self.printerURLLineEdit.setEnabled(False)
+            self.autoUpload = 0
+
+        self.printerUrl = self.settings.value('printerUrl')
+        self.printerURLLineEdit.setText(self.printerUrl)
+
     def setAutoExit(self):
-        if self.checkBoxAutoExit.checkState() == 2:
+        if self.autoExitCheckBox.checkState() == 2:
             self.autoExit = 1
             self.settings.setValue('autoExit', 1)
         else:
             self.autoExit = 0
             self.settings.setValue('autoExit', 0)
+
+    def setAutoUpload(self):
+        if self.autoUploadCheckBox.checkState() == 2:
+            self.settings.setValue('printerUrl', self.printerURLLineEdit.text())
+            self.printerURLLineEdit.setEnabled(True)
+            self.settings.setValue('autoUpload', 1)
+            self.autoUpload = 1
+        else:
+            self.settings.setValue('printerUrl', self.printerURLLineEdit.text())
+            self.printerURLLineEdit.setEnabled(False)
+            self.settings.setValue('autoUpload', 0)
+            self.autoUpload = 0
+
+    def upload(self):
+        filename = os.path.basename(self.filename)
+
+        self.textBrowserResult.append(f'\nUploading {filename} to {self.printerUrl}...')
+
+        headers = {'Content-type': 'text/plain', 'Slug': self.filename}
+        req = requests.put(self.printerUrl + '/machine/file/gcodes/' + filename, data=open(self.filename, 'rb'), headers=headers)
+
+        if req.status_code == 201:
+            self.textBrowserResult.append(f'Successfully uploaded {filename} to {self.printerUrl}')
+            self.pushButtonExit.clicked.connect(self.bye)
+        else:
+            self.textBrowserResult.setStyleSheet("color: 'red'")
+            self.textBrowserResult.append(f"ERROR: Couldn't upload {filename} to {self.printerUrl}!")
+            self.pushButtonExit.clicked.connect(self.errorClose)
+            self.error = 1
 
     def plot(self):
         self.bounds = self.findBounds()
@@ -177,7 +223,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         else:
             self.pushButtonExit.show()
             self.pushButtonExit.setEnabled(True)
-            self.pushButtonExit.clicked.connect(self.exit)
 
         self.linesNew = self.calcBed()
 
@@ -193,14 +238,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.FileNew.close()
 
         if self.error == 1:
-            self.textBrowserResult.setStyleSheet('color: rgb(255, 38, 0);')
+            self.textBrowserResult.setStyleSheet("color: 'red'")
+            self.timer = QtCore.QTimer(self)
+            self.timer.timeout.connect(self.close())
+            self.timer.start(7000)
         else:
             self.textBrowserResult.setStyleSheet('color: rgb(0, 0, 0);')
-
-        if self.settings.value('autoExit') == 1:
-            self.timer = QtCore.QTimer(self)
-            self.timer.timeout.connect(self.exit)
-            self.timer.start(2000)
+            self.finished()
 
     def calcBed(self):
         self.bed = self.findBed()
@@ -293,8 +337,33 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         return self.linesNew
 
-    def exit(self):
-        self.close()
+    def finished(self):
+        if self.error == 1:
+            self.bye()
+        else:
+            if self.settings.value('autoUpload') == 1:
+                self.upload()
+                if self.autoExit == 1:
+                    self.bye()
+
+    def bye(self):
+        if self.error == 1:
+            self.textBrowserResult.setStyleSheet("color: 'red'")
+            self.timer = QtCore.QTimer(self)
+            self.timer.timeout.connect(self.close)
+            self.timer.start(7000)
+        else:
+            if self.settings.value('autoExit') == 1:
+                self.timer = QtCore.QTimer(self)
+                self.timer.timeout.connect(self.close)
+                self.timer.start(2000)
+            else:
+                self.close()
+
+    def errorClose(self):
+        timer = QtCore.QTimer()
+        timer.timeout.connect(sys.exit(1))
+        timer.start(5000)
 
 class LayerError(Exception):
     pass
@@ -563,6 +632,8 @@ class GcodeReader(QThread):
 
         plt.rcParams.update({'font.size': 10})
 
+        plt.grid(b=True, which='both', color='r', linestyle='dotted', linewidth=1)
+
         for tick in self.ax.xaxis.get_major_ticks():
             tick.label.set_fontsize(10)
 
@@ -581,6 +652,13 @@ def create_axis(figsize=(8, 8), projection='2d'):
     fig, ax = plt.subplots(figsize=figsize)
 
     return fig, ax
+
+#class SettingsWindow(QMainWindow, Ui_SettingsWindow):
+#    updateProgress = QtCore.pyqtSignal(int)
+
+#    def __init__(self):
+#        super(SettingsWindow, self).__init__()
+#        self.setupUi(self)
 
 def main(filename):
     global app
