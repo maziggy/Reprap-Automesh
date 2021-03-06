@@ -111,10 +111,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if self.settings.value('autoUpload') == 1:
             self.autoUploadCheckBox.setChecked(True)
             self.printerURLLineEdit.setEnabled(True)
+            self.labelDwcUrl.setEnabled(True)
             self.autoUpload = 1
         else:
             self.autoUploadCheckBox.setChecked(False)
             self.printerURLLineEdit.setEnabled(False)
+            self.labelDwcUrl.setEnabled(True)
             self.autoUpload = 0
 
         self.printerUrl = self.settings.value('printerUrl')
@@ -132,11 +134,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if self.autoUploadCheckBox.checkState() == 2:
             self.settings.setValue('printerUrl', self.printerURLLineEdit.text())
             self.printerURLLineEdit.setEnabled(True)
+            self.labelDwcUrl.setEnabled(True)
             self.settings.setValue('autoUpload', 1)
             self.autoUpload = 1
         else:
             self.settings.setValue('printerUrl', self.printerURLLineEdit.text())
             self.printerURLLineEdit.setEnabled(False)
+            self.labelDwcUrl.setEnabled(False)
             self.settings.setValue('autoUpload', 0)
             self.autoUpload = 0
 
@@ -146,16 +150,29 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.textBrowserResult.append(f'\nUploading {filename} to {self.printerUrl}...')
 
         headers = {'Content-type': 'text/plain', 'Slug': self.filename}
-        req = requests.put(self.printerUrl + '/machine/file/gcodes/' + filename, data=open(self.filename, 'rb'), headers=headers)
 
-        if req.status_code == 201:
-            self.textBrowserResult.append(f'Successfully uploaded {filename} to {self.printerUrl}')
-            self.pushButtonExit.clicked.connect(self.bye)
-        else:
+        try:
+            req = requests.put(self.printerUrl + '/machine/file/gcodes/' + filename, data=open(self.filename, 'rb'), headers=headers, timeout=5)
+        except:
+            self.error = 1
+
+        try:
+            req
+        except:
             self.textBrowserResult.setStyleSheet("color: 'red'")
             self.textBrowserResult.append(f"ERROR: Couldn't upload {filename} to {self.printerUrl}!")
             self.pushButtonExit.clicked.connect(self.errorClose)
             self.error = 1
+        else:
+            if req in locals():
+                if req.status_code == 201:
+                    self.textBrowserResult.append(f'Successfully uploaded {filename} to {self.printerUrl}')
+                    self.pushButtonExit.clicked.connect(self.bye)
+                else:
+                    self.textBrowserResult.setStyleSheet("color: 'red'")
+                    self.textBrowserResult.append(f"ERROR: Couldn't upload {filename} to {self.printerUrl}!")
+                    self.pushButtonExit.clicked.connect(self.errorClose)
+                    self.error = 1
 
     def plot(self):
         self.bounds = self.findBounds()
@@ -241,7 +258,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.textBrowserResult.setStyleSheet("color: 'red'")
             self.timer = QtCore.QTimer(self)
             self.timer.timeout.connect(self.close())
-            self.timer.start(7000)
+            self.timer.start(5000)
         else:
             self.textBrowserResult.setStyleSheet('color: rgb(0, 0, 0);')
             self.finished()
@@ -345,13 +362,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.upload()
                 if self.autoExit == 1:
                     self.bye()
+            else:
+                self.bye()
 
     def bye(self):
         if self.error == 1:
             self.textBrowserResult.setStyleSheet("color: 'red'")
             self.timer = QtCore.QTimer(self)
             self.timer.timeout.connect(self.close)
-            self.timer.start(7000)
+            self.timer.start(5000)
         else:
             if self.settings.value('autoExit') == 1:
                 self.timer = QtCore.QTimer(self)
